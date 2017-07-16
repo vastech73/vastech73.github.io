@@ -1,0 +1,108 @@
+---
+title: "Football Assignment"
+author: "Vasudevan Visvanathan"
+date: "7/16/2017"
+output: html_document
+---
+
+
+```{r}
+library(ggplot2)
+library(shiny)
+library(readr)
+library(DT)
+library(knitr)
+library(lubridate)
+library(manipulate)
+library(tidyverse)
+library(crosstalk)
+library(d3scatter)
+library(reshape2)
+library(tidyr)
+library(ggthemes)
+library(gridExtra)
+library(rpart)
+library(modelr)
+library(ggrepel)
+library(dplyr)
+library(plotly)
+```
+## Set the theme
+
+```{r}
+notebook_theme <- theme_fivethirtyeight() + 
+         theme( axis.title = element_text(), legend.position = "right",
+                  legend.direction = "vertical")
+theme_set(notebook_theme)
+```
+
+## Read the data
+```{r}
+# Any results you write to the current directory are saved as output.
+con <- dbConnect(SQLite(), dbname="database.sqlite")
+dbListTables(con)
+tbs <- as.list(dbListTables(con))
+###"Country","League","Match","Player","Player_Stats","Team","sqlite_sequence"
+for (tb in tbs) {
+  readtable <- paste0(tb," <- tbl_df(dbGetQuery(con,'SELECT * FROM ",tb,"'))")
+  eval(parse(text=readtable))
+}
+match <- data.frame(season=Match$season,date=as.POSIXlt(Match$date),year=year(as.POSIXlt(Match$date)),
+                    match_api_id=Match$match_api_id,home_team_api_id=Match$home_team_api_id,
+                    away_team_api_id=Match$away_team_api_id,home_team_goal=Match$home_team_goal,
+                    away_team_goal=Match$away_team_goal)
+
+match
+
+#Get the total Matches Played and Home and Away match count for Liverpool
+home_match_liverpool <- filter(match, home_team_api_id == "8650")
+home_match_liverpool
+away_match_liverpool <- filter(match, away_team_api_id == "8650")
+away_match_liverpool 
+
+## [0] Visualise the data space
+
+c0<- ggplot(home_match_liverpool) + aes(season, home_team_goal, size = away_team_goal, color = away_team_api_id ) + 
+  geom_point()
+c0
+
+```
+
+```{r}
+tree <- rpart (season ~ home_team_goal + year + away_team_goal, home_match_liverpool, method = "class")
+
+summary(tree)
+
+grid <- home_match_liverpool %>%
+  data_grid(home_team_goal = seq_range(home_team_goal, 25),
+                       year = seq_range(year, 25), away_team_goal = seq_range(away_team_goal,25))
+
+pred <- predict(tree, grid, type="prob") %>%
+        as.data.frame()
+
+tree_grid <- bind_cols(grid, pred)
+colnames(tree_grid)[4] <- "pred"
+head(tree_grid) 
+
+```
+
+```{r}
+p1 <- ggplot(tree_grid, aes(home_team_goal, year, color=pred)) + geom_point(alpha=0.5) 
+p1
+
+
+```
+
+```{r}
+p <- plot_ly(tree_grid, x = ~home_team_goal, y = ~year, z = ~away_team_goal, color = ~pred) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'Home Team Goals'),
+                     yaxis = list(title = 'Year'),
+                     zaxis = list(title = 'Away Team Goal')))
+p
+
+```
+
+
+
+
